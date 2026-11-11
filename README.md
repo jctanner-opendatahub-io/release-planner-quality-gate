@@ -157,6 +157,28 @@ On re-runs, the orchestrator evaluates every in-scope candidate, but **skips Jir
 
 Batch runs write `artifacts/run-data.json` **before** applying labels/comments, isolate per-issue Jira write failures (one bad ticket cannot abort the rest), and fall back to posting a new gate comment when updating an existing one returns HTTP 400/403 (edit denied). Gate-comment updates only target comments authored by the authenticated bot — marker matches from humans/other bots are left alone and a new comment is added. Comment lists are fetched once per issue and filtered in memory.
 
+## Updating the Release Calendar
+
+Discovery only finds Target Versions whose **code freeze is still in the future**, resolved from `config/release-calendar.json`. When a new cycle (e.g. 3.7) is not in that file, discovery fail-closes to a never-match Target Version clause and every run reports `No issues found to evaluate.` — the job still exits 0. Re-sync the calendar whenever a new cycle starts planning or dates move:
+
+```bash
+uv run python scripts/update_release_calendar.py --dry-run   # preview changes
+uv run python scripts/update_release_calendar.py             # write the file
+```
+
+The script reads the RHOAI planning-freeze / code-freeze / release milestones straight from [Product Pages](https://productpages.redhat.com) (API v7), the system of record for release schedules. Authentication, in order of preference:
+
+1. **Kerberos ticket** (default on a Red Hat laptop) — just `kinit` first; the script rides the Product Pages OIDC login flow with SPNEGO via `curl --negotiate`.
+2. `PRODUCTPAGES_TOKEN` — a raw access token sent as a Bearer header.
+3. `PRODUCTPAGES_CLIENT_ID` + `PRODUCTPAGES_CLIENT_SECRET` — an EmployeeIDP service account (client_credentials grant), for automation. Request one through IT's SSO service account form (Production environment).
+
+Behavior notes:
+
+- Events are keyed by `(version, event)`; releases fetched from Product Pages are added or updated, and everything else (including hand-adjusted historical rows) is left untouched. A date Product Pages does not carry never overwrites an existing value.
+- Dates in Product Pages move as schedules slip — the printed change list (and your git diff) is the review surface. Commit the regenerated file like any other config change.
+- Draft and invalid schedule rows are ignored; freeze spans use the last day.
+- `--releases rhai-3.7` syncs a single release; `--product-line` switches trains (default `RHOAI` — RHAII/RHELAI ship on their own trains with their own dates).
+
 ## Testing
 
 ```bash
@@ -173,6 +195,7 @@ Integration tests use [jira-emulator](https://github.com/ederign/jira-emulator) 
 scripts/
   quality_gate.py       # Main orchestrator — discover, evaluate, fix, label
   release_calendar.py   # Target Version resolution from release-calendar.json
+  update_release_calendar.py  # Rebuild release-calendar.json from Product Pages
   rice_invoker.py       # Headless Claude /rice-score invocation + parsing
   description_signals.py # Org Pulse description-scanner port (gate path)
   report.py             # JSON + YAML artifact generation
@@ -188,6 +211,7 @@ tests/
   test_quality_gate.py   # JQL builder, config, evaluate, run-data
   test_fingerprint_skip.py  # QG1-FP stability / skip logic
   test_release_calendar.py  # Calendar Target Version helpers
+  test_update_release_calendar.py  # Product Pages sync (parsing + merge)
   test_label_management.py  # Atomic label swap logic
   test_rice_invoker.py   # RICE structured output parsing
   test_report.py         # Report generation
