@@ -7,7 +7,7 @@ test:               ## Run all tests
 	uv run pytest tests/ -v --tb=short
 
 test-unit:          ## Run unit tests only
-	uv run pytest tests/test_checks.py tests/test_report.py tests/test_release_calendar.py -v --tb=short
+	uv run pytest tests/test_checks.py tests/test_report.py tests/test_release_calendar.py tests/test_update_release_calendar.py -v --tb=short
 
 test-integration:   ## Run integration tests (jira-emulator)
 	uv run pytest tests/test_quality_gate.py tests/test_label_management.py -v --tb=short

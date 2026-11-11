@@ -1,10 +1,13 @@
 """Tests for discovery Target Version resolution from the release calendar."""
+import os
+
 from datetime import date
 
 from scripts.release_calendar import (
     expand_jira_names_for_future_events,
     expand_jira_target_version_names,
     is_obsolete_version_name,
+    load_calendar,
     resolve_discovery_target_versions,
     versions_with_future_code_freeze,
 )
@@ -224,3 +227,23 @@ class TestResolveDiscoveryTargetVersions:
         assert "3.9 EA1 RHOAI RELEASE" in names
         assert "3.9 EA1 RHAII RELEASE" in names
         assert is_obsolete_version_name("rhoai-3.9")
+
+
+def test_repo_calendar_has_code_freeze_beyond_30_days():
+    """Guard against the silent fail-closed outage (PR #12 postmortem).
+
+    Discovery only emits Target Versions whose code freeze is still in the
+    future; when the calendar runs out, every batch run evaluates zero
+    issues and exits 0. Require at least one code freeze ≥ 30 days out so
+    the calendar expiring turns CI red before the gate goes dark.
+    """
+    from datetime import timedelta
+
+    repo_calendar = os.path.join(
+        os.path.dirname(__file__), "..", "config", "release-calendar.json")
+    calendar = load_calendar(repo_calendar)
+    horizon = date.today() + timedelta(days=30)
+    assert versions_with_future_code_freeze(calendar, as_of=horizon), (
+        "config/release-calendar.json has no code freeze ≥ 30 days out — "
+        "QG1 discovery is about to fail closed; run "
+        "scripts/update_release_calendar.py and commit the refreshed calendar")

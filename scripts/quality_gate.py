@@ -749,6 +749,24 @@ def print_summary(results_by_issue):
     print(f"{'='*70}\n")
 
 
+def _discovery_fail_closed(config) -> bool:
+    """True when discovery Target Version resolution is empty (fail-closed).
+
+    In that state every batch run evaluates zero issues because ``build_jql``
+    emits the never-match sentinel — the calendar is exhausted and needs a
+    sync (``scripts/update_release_calendar.py``).
+    """
+    jql_cfg = config.get("jql") or {}
+    if jql_cfg.get("target_versions"):
+        return False
+    if not jql_cfg.get("target_versions_from_calendar", True):
+        return False
+    try:
+        return not resolve_discovery_target_versions(config)
+    except OSError:
+        return True  # calendar file missing/unreadable — also fail-closed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Release Quality Gate 1: Feature Definition of Ready for Planning"
@@ -773,6 +791,12 @@ def main(argv=None):
     issues = discover_issues(config, server, user, token,
                              issue_key=args.issue)
     if not issues:
+        if not args.issue and _discovery_fail_closed(config):
+            print("WARNING: no issues found AND the release calendar resolves "
+                  "to no future code freeze — discovery fail-closed to the "
+                  "never-match sentinel. Update config/release-calendar.json "
+                  "(run scripts/update_release_calendar.py).", file=sys.stderr)
+            sys.exit(2)
         print("No issues found to evaluate.")
         run_data = build_run_data({}, config, args.dry_run, mode, args.issue)
         write_artifacts(run_data)

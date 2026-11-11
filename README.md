@@ -166,18 +166,25 @@ uv run python scripts/update_release_calendar.py --dry-run   # preview changes
 uv run python scripts/update_release_calendar.py             # write the file
 ```
 
-The script reads the RHOAI planning-freeze / code-freeze / release milestones straight from [Product Pages](https://productpages.redhat.com) (API v7), the system of record for release schedules. Authentication, in order of preference:
+The script reads the RHOAI planning-freeze / code-freeze / release milestones straight from [Product Pages](https://productpages.redhat.com) (API v7), the system of record for release schedules. Authentication, in order of precedence (the first that applies wins):
 
-1. **Kerberos ticket** (default on a Red Hat laptop) — just `kinit` first; the script rides the Product Pages OIDC login flow with SPNEGO via `curl --negotiate`.
-2. `PRODUCTPAGES_TOKEN` — a raw access token sent as a Bearer header.
-3. `PRODUCTPAGES_CLIENT_ID` + `PRODUCTPAGES_CLIENT_SECRET` — an EmployeeIDP service account (client_credentials grant), for automation. Request one through IT's SSO service account form (Production environment).
+1. `PRODUCTPAGES_TOKEN` — a raw access token sent as a Bearer header.
+2. `PRODUCTPAGES_CLIENT_ID` + `PRODUCTPAGES_CLIENT_SECRET` — an EmployeeIDP service account (client_credentials grant), for automation. Request one through IT's SSO service account form (Production environment).
+3. **Kerberos ticket** (fallback when no credential env vars are set) — just `kinit` first; the script rides the Product Pages OIDC login flow with SPNEGO via `curl --negotiate`.
+
+`--base-url` must be HTTPS on an approved Product Pages host (default allowlist: `productpages.redhat.com`, `pp.engineering.redhat.com`; extend via `PRODUCTPAGES_ALLOWED_HOSTS`) so credentials are never sent over cleartext or to an unexpected host.
 
 Behavior notes:
 
-- Events are keyed by `(version, event)`; releases fetched from Product Pages are added or updated, and everything else (including hand-adjusted historical rows) is left untouched. A date Product Pages does not carry never overwrites an existing value.
+- Events are keyed by `(version, event)`; releases fetched from Product Pages are added or updated, and everything else (including hand-adjusted historical rows) is left untouched. A date Product Pages does not carry never overwrites an existing value — and a previously reported milestone that vanishes from the fetch is called out in the output.
+- Rows from a release page that belong to a different version (predecessor milestones copied onto later pages) are non-authoritative: they only fill gaps, never override.
 - Dates in Product Pages move as schedules slip — the printed change list (and your git diff) is the review surface. Commit the regenerated file like any other config change.
-- Draft and invalid schedule rows are ignored; freeze spans use the last day.
-- `--releases rhai-3.7` syncs a single release; `--product-line` switches trains (default `RHOAI` — RHAII/RHELAI ship on their own trains with their own dates).
+- Draft and invalid schedule rows are ignored; non-ISO dates and malformed rows are skipped with a warning; freeze spans use the last day; release dates come only from the top-level `jira-sync` rows.
+- The calendar is written atomically, so an interrupted run cannot truncate it. If nothing at all can be extracted, the script exits 2 (use `--allow-empty` to downgrade) rather than claiming the calendar is current.
+- `generatedAt` / `sync.ranAt` record the last run that changed content; a provenance change (different releases or product line) also counts as a change so the sync block converges.
+- The calendar refuses to sync a different `--product-line` over one already synced (events are keyed by `(version, event)` only — pass `--force-product-line` to override). `--releases rhai-3.7` syncs a single release.
+
+The gate itself also fails loudly now: `quality_gate.py` exits 2 when a batch run finds no issues *and* the calendar resolves to no future code freeze, and a CI guard test requires the committed calendar to always contain a code freeze ≥ 30 days out — so an exhausted calendar turns red instead of silently evaluating nothing.
 
 ## Testing
 

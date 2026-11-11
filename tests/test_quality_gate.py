@@ -650,3 +650,42 @@ class TestBuildGateComment:
         )
         assert data["issues"][0]["fpdor"]["passed_count"] == 17
         assert data["issues"][0]["fpdor"]["total_count"] == FPDOR_TOTAL_COUNT
+
+
+class TestDiscoveryFailClosed:
+    """_discovery_fail_closed: the silent zero-issue outage detector (PR #12)."""
+
+    def test_true_when_calendar_resolution_is_empty(self, tmp_path, monkeypatch):
+        import scripts.quality_gate as qg
+        calendar_path = tmp_path / "release-calendar.json"
+        calendar_path.write_text(json.dumps({"events": []}))
+        config = {"jql": {"target_versions_from_calendar": True,
+                          "calendar_path": str(calendar_path)}}
+        assert qg._discovery_fail_closed(config) is True
+
+    def test_false_when_calendar_has_future_code_freeze(self, tmp_path):
+        from datetime import date
+        import scripts.quality_gate as qg
+        calendar_path = tmp_path / "release-calendar.json"
+        calendar_path.write_text(json.dumps({"events": [
+            {"version": "3.7", "event": "EA1",
+             "codeFreeze": date.today().isoformat()}]}))
+        config = {"jql": {"target_versions_from_calendar": True,
+                          "calendar_path": str(calendar_path)}}
+        assert qg._discovery_fail_closed(config) is False
+
+    def test_false_with_explicit_target_versions(self):
+        import scripts.quality_gate as qg
+        config = {"jql": {"target_versions": ["3.7 EA1 RHOAI RELEASE"]}}
+        assert qg._discovery_fail_closed(config) is False
+
+    def test_false_when_calendar_resolution_disabled(self):
+        import scripts.quality_gate as qg
+        config = {"jql": {"target_versions_from_calendar": False}}
+        assert qg._discovery_fail_closed(config) is False
+
+    def test_true_when_calendar_file_missing(self):
+        import scripts.quality_gate as qg
+        config = {"jql": {"target_versions_from_calendar": True,
+                          "calendar_path": "/nonexistent/release-calendar.json"}}
+        assert qg._discovery_fail_closed(config) is True
