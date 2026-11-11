@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-30",
+  "generatedAt": "2026-11-11",
   "note": "Key dates parsed from RHOAI GA release calendar CSV. Dates are YYYY-MM-DD. Rule: the code freeze of event N serves as the planning freeze of event N+1. Product Pages (RHAI 3.5/3.6) state the same rule in plain language: RHOAI planning freeze = code freeze of the previous release event. 3.4 EA1 planningFreeze was null in the CSV (no prior cycle in this file); set to 2026-01-23 by applying the observed EA1 PF→CF gap from 3.5/3.6 (~28 days) to 3.4 EA1 codeFreeze 2026-02-20. Confirm against 3.3 GA code freeze if that schedule is recovered. RHAIIS 3.4 shares these same freeze/release dates for historical delivery bootstrap (no separate RHAIIS calendar rows); EA2 planningFreeze=2026-02-20.",
   "events": [
     {
@@ -64,6 +64,20 @@
       "planningFreeze": "2026-09-18",
       "codeFreeze": "2026-10-23",
       "releaseDate": "2026-11-19"
+    },
+    {
+      "version": "3.7",
+      "event": "EA1",
+      "planningFreeze": "2026-11-11",
+      "codeFreeze": "2026-12-11",
+      "releaseDate": "2027-01-20"
+    },
+    {
+      "version": "3.7",
+      "event": "GA",
+      "planningFreeze": "2026-12-11",
+      "codeFreeze": "2027-01-29",
+      "releaseDate": "2027-02-17"
     }
   ]
 }
