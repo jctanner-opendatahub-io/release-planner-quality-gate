@@ -157,6 +157,19 @@ On re-runs, the orchestrator evaluates every in-scope candidate, but **skips Jir
 
 Batch runs write `artifacts/run-data.json` **before** applying labels/comments, isolate per-issue Jira write failures (one bad ticket cannot abort the rest), and fall back to posting a new gate comment when updating an existing one returns HTTP 400/403 (edit denied). Gate-comment updates only target comments authored by the authenticated bot — marker matches from humans/other bots are left alone and a new comment is added. Comment lists are fetched once per issue and filtered in memory.
 
+## Failure modes (loud exits)
+
+Two production incidents ran **green while doing nothing**: the stale-calendar window (2026-10-24 → 2026-11-11) and the revoked-credential window (2026-11-15 → 2026-11-16). The second was silent because Jira Cloud's search endpoint degrades invalid Basic credentials to *anonymous* — HTTP 200 with zero rows, not 401 — so an empty search is indistinguishable from an empty backlog. The gate now fails loudly instead:
+
+| Exit code | Condition | Meaning |
+|---|---|---|
+| 2 | `GET /rest/api/3/myself` rejected the credentials at startup | Dead/rotated token; search would silently return zero issues as anonymous |
+| 3 | Discovery returned 0 issues while the release calendar resolves ≥1 target version | Credentials lost visibility, or Jira search is degraded — anomalous with a live calendar |
+| 4 | Discovery returned 0 issues because the calendar resolved no target versions | Calendar expired; discovery fail-closed to the never-match sentinel — update `config/release-calendar.json` |
+| 5 | `--issue KEY` not found or not visible to these credentials | Single-issue mode |
+
+Zero-issue `run-data.json` is still written (and pushed to the archive) before exiting, so the audit trail is unchanged — only the exit status and stderr now tell the truth.
+
 ## Testing
 
 ```bash

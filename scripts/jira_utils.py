@@ -99,6 +99,33 @@ def require_env():
     return server, user, token
 
 
+def verify_credentials(server, user, token):
+    """Prove the Jira credentials authenticate before doing any work.
+
+    Jira Cloud's search endpoint (``POST /rest/api/3/search/jql``) silently
+    degrades invalid Basic credentials to anonymous: it returns HTTP 200
+    with zero rows instead of 401. A revoked token therefore looks exactly
+    like an empty backlog, and a green job. ``GET /rest/api/3/myself`` is
+    the cheap discriminator — it returns 401 for credentials Jira will not
+    accept (verified live during the 2026-11-15/16 QG1 incident).
+
+    Exits with code 2 and a loud message when authentication fails; any
+    transient network error is retried (and raised) by
+    ``api_call_with_retry`` as usual.
+    """
+    try:
+        api_call_with_retry(server, "/myself", user, token)
+    except urllib.error.HTTPError as e:
+        print(
+            f"PREFLIGHT FAIL: Jira rejected the credentials "
+            f"(HTTP {e.code} on GET /rest/api/3/myself). The search "
+            f"endpoint would silently return zero issues as anonymous — "
+            f"exiting instead of no-op'ing green.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
 # ─── Jira Operations ─────────────────────────────────────────────────────────
 
 def search_issues(server, user, token, jql, fields=None, max_results=50):
