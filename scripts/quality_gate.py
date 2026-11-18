@@ -152,7 +152,16 @@ def discover_issues(config, server, user, token, issue_key=None):
     """Discover issues to evaluate — single key or JQL batch."""
     fields = collect_required_fields(config)
     if issue_key:
-        issue = get_issue(server, user, token, issue_key, fields=fields)
+        try:
+            issue = get_issue(server, user, token, issue_key, fields=fields)
+        except urllib.error.HTTPError as exc:
+            # A missing/invisible key is a 404, not a crash: surface it
+            # through the empty-discovery path (which exits 5 loudly).
+            # Everything else (including auth failures on the issue read)
+            # propagates as before.
+            if exc.code != 404:
+                raise
+            return []
         return [issue] if issue else []
     jql = build_jql(config)
     return search_issues(server, user, token, jql, fields=fields)

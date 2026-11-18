@@ -7,13 +7,12 @@ empty-discovery path exited 0. The same silent path also hid the
 stale-release-calendar window (2026-10-24 → 2026-11-11). These tests pin
 the guards that convert both failure classes into loud, non-zero exits.
 """
-import sys
 import urllib.error
 from unittest.mock import patch
 
 import pytest
-
 import scripts.quality_gate as qg
+
 from scripts import jira_utils
 
 
@@ -110,6 +109,19 @@ class TestVerifyCredentials:
                 "https://jira.example", "bot@example.com", "token-value"
             )
 
+    def test_outage_errors_reraise_not_credential_exit(self):
+        # A 503 that survives the retry cycle is a Jira outage, not a
+        # rejected credential: it must propagate, not exit 2.
+        with patch.object(
+            jira_utils,
+            "api_call_with_retry",
+            side_effect=_http_error(503),
+        ):
+            with pytest.raises(urllib.error.HTTPError):
+                jira_utils.verify_credentials(
+                    "https://jira.example", "bot@example.com", "token-value"
+                )
+
 
 # --- Zero-discovery guards in main() ---
 
@@ -155,13 +167,30 @@ class TestMainZeroDiscovery:
         cfg = _write_config(
             tmp_path, target_versions=["3.9 EA1 RHOAI RELEASE"]
         )
-        with patch.object(qg, "get_issue", return_value=None):
+        # A missing/invisible key arrives as HTTP 404 from get_issue;
+        # discover_issues converts it to an empty result so the loud
+        # exit-5 path (and the artifact write) runs.
+        with patch.object(qg, "get_issue", side_effect=_http_error(404)):
             with pytest.raises(SystemExit) as excinfo:
-                self._run_main(["--config", cfg, "--issue", "RHAISTRAT-9999"])
+                with patch.object(qg, "verify_credentials"), patch.object(
+                    qg, "write_artifacts"
+                ) as mock_write:
+                    qg.main(["--config", cfg, "--issue", "RHAISTRAT-9999"])
         assert excinfo.value.code == 5
+        assert mock_write.called
         err = capsys.readouterr().err
         assert "ISSUE NOT FOUND" in err
         assert "RHAISTRAT-9999" in err
+
+    def test_single_issue_server_error_propagates(self, jira_env, tmp_path):
+        # Non-404 errors on the issue read are not swallowed.
+        cfg = _write_config(
+            tmp_path, target_versions=["3.9 EA1 RHOAI RELEASE"]
+        )
+        with patch.object(qg, "get_issue", side_effect=_http_error(500)):
+            with pytest.raises(urllib.error.HTTPError):
+                with patch.object(qg, "verify_credentials"):
+                    qg.main(["--config", cfg, "--issue", "RHAISTRAT-9999"])
 
     def test_artifacts_still_written_before_loud_exit(self, jira_env, tmp_path):
         cfg = _write_config(

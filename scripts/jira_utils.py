@@ -109,13 +109,17 @@ def verify_credentials(server, user, token):
     the cheap discriminator — it returns 401 for credentials Jira will not
     accept (verified live during the 2026-11-15/16 QG1 incident).
 
-    Exits with code 2 and a loud message when authentication fails; any
-    transient network error is retried (and raised) by
-    ``api_call_with_retry`` as usual.
+    Exits with code 2 and a loud message when Jira rejects the
+    credentials (HTTP 401/403 on ``GET /rest/api/3/myself``). Any other
+    HTTP error — including an exhausted 429/5xx retry cycle, i.e. a Jira
+    outage rather than a token problem — is re-raised so operators can
+    tell the two apart.
     """
     try:
         api_call_with_retry(server, "/myself", user, token)
     except urllib.error.HTTPError as e:
+        if e.code not in (401, 403):
+            raise
         print(
             f"PREFLIGHT FAIL: Jira rejected the credentials "
             f"(HTTP {e.code} on GET /rest/api/3/myself). The search "
